@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Oki_Checklist</title>
+<style>
+  :root { --border:#d9d9d9; --bg:#f7f8fa; --card:#fff; --head:#eef3f8; --accent:#e9f0fb; --ok:#0a7; --ng:#999; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:#222; }
+  .app { max-width: 920px; margin:0 auto; padding:12px; }
+  .topbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  button { border:1px solid #c9c9c9; background:#fff; border-radius:12px; padding:10px 12px; font-size:14px; }
+  .hint { font-size:12px; color:#666; margin:4px 0 12px; }
+  .sticky { position:sticky; top:0; z-index:4; background:var(--bg); padding-top:8px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:12px; margin-bottom:12px; box-shadow:0 2px 10px rgba(0,0,0,.04); }
+  .row { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:start; }
+  input[type=text], textarea { width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:12px; padding:10px; font-size:16px; background:#fff; }
+  textarea { min-height:68px; resize:vertical; }
+  .section-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+  .section-title { font-weight:700; font-size:16px; }
+  .mini { font-size:12px; color:#666; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  @media (min-width: 760px) { .grid { grid-template-columns:1fr 1fr 1fr; } }
+  .group { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#fff; }
+  .group h4 { margin:0; padding:8px 10px; background:var(--head); font-size:13px; }
+  .cell { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; border-top:1px solid #eee; }
+  .label { font-size:13px; }
+  .toggle { width:54px; height:34px; border:none; border-radius:999px; background:#ddd; position:relative; flex:0 0 auto; }
+  .toggle::after { content:'×'; position:absolute; inset:3px auto auto 3px; width:28px; height:28px; border-radius:50%; background:#fff; color:var(--ng); display:flex; align-items:center; justify-content:center; font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,.15); transition:.18s; }
+  .toggle.on { background:#bdebdc; }
+  .toggle.on::after { content:'○'; transform:translateX(20px); color:var(--ok); }
+  .smallbtn { padding:8px 10px; font-size:12px; border-radius:10px; }
+  .danger { background:#fff3f3; border-color:#f0b8b8; }
+  .settings { display:none; }
+  .settings.on { display:block; }
+  .setting-row { display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center; margin-bottom:8px; }
+  .setting-row input { font-size:15px; }
+  .sub-setting { display:grid; grid-template-columns:1fr auto; gap:8px; margin:8px 0 12px; }
+  .pill { font-size:12px; background:#f1f4f8; border:1px solid #dfe5ec; border-radius:999px; padding:4px 8px; }
+  .divider { height:1px; background:#e6e6e6; margin:12px 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sticky">
+    <div class="topbar">
+      <button onclick="addRow()">行を追加</button>
+      <button onclick="saveLocal()">保存</button>
+      <button onclick="loadLocal()">読み込み</button>
+      <button onclick="exportHTML()">HTML書き出し</button>
+      <button onclick="toggleSettings()">設定</button>
+    </div>
+    <div class="hint">スマホ前提のカード表示です。設定画面でチェック項目の増減と名称変更ができます。</div>
+  </div>
+
+  <div id="settingsPanel" class="card settings">
+    <div class="section-head">
+      <div>
+        <div class="section-title">設定画面</div>
+        <div class="mini">カテゴリ名・項目名・項目数を編集</div>
+      </div>
+      <button class="smallbtn" onclick="toggleSettings()">閉じる</button>
+    </div>
+
+    <div class="sub-setting">
+      <label class="pill">項目名</label>
+      <label class="pill">表示</label>
+    </div>
+    <div id="groupSettings"></div>
+    <div class="divider"></div>
+    <div class="sub-setting">
+      <label class="pill">共通の小項目</label>
+      <div></div>
+    </div>
+    <div id="subSettings"></div>
+    <div class="divider"></div>
+    <button onclick="applySettings()">設定を反映</button>
+  </div>
+
+  <div id="rows"></div>
+</div>
+<script>
+let groups = ['無敵','投げ','バクステ','飛び','逆択','様子見','パリィ'];
+let subs = ['シミー','投げ','打撃'];
+let totalChecks = groups.length * subs.length;
+
+function blankRow(){ return { name:'', note:'', checks:Array(totalChecks).fill(false) }; }
+function dataFromCards(){ return [...document.querySelectorAll('.card[data-row="1"]')].map(card => ({
+  name: card.querySelector('.name').value,
+  note: card.querySelector('.note').value,
+  checks: [...card.querySelectorAll('.toggle')].map(b => b.classList.contains('on'))
+})); }
+function buildCard(d=blankRow()){
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.setAttribute('data-row','1');
+  let html = `
+    <div class="section-head">
+      <div>
+        <div class="section-title">状況</div>
+        <div class="mini">任意テキスト入力</div>
+      </div>
+      <button class="smallbtn danger" onclick="removeCard(this)">削除</button>
+    </div>
+    <input class="name" type="text" value="${escapeHTML(d.name||'')}" placeholder="例：端背負い / 起き上がり密着 など">
+    <div style="height:8px"></div>
+    <textarea class="note" placeholder="備考">${escapeHTML(d.note||'')}</textarea>
+    <div class="section-head" style="margin-top:10px; margin-bottom:8px;">
+      <div class="section-title">チェック</div>
+      <div class="mini">○ / × を切り替え</div>
+    </div>
+    <div class="grid">`;
+  groups.forEach((g, gi) => {
+    html += `<div class="group"><h4>${escapeHTML(g)}</h4>`;
+    subs.forEach((s, si) => {
+      const idx = gi*subs.length + si;
+      const on = !!d.checks[idx];
+      html += `<div class="cell"><div class="label">${escapeHTML(s)}</div><button class="toggle ${on ? 'on':''}" onclick="toggle(this)"></button></div>`;
+    });
+    html += `</div>`;
+  });
+  html += `</div>`;
+  card.innerHTML = html;
+  return card;
+}
+function renderRows(data){ const rows = document.getElementById('rows'); rows.innerHTML=''; data.forEach(d => rows.appendChild(buildCard(d))); if(!data.length) addRow(); }
+function addRow(){ document.getElementById('rows').appendChild(buildCard()); }
+function removeCard(btn){ btn.closest('.card').remove(); }
+function toggle(btn){ btn.classList.toggle('on'); }
+function saveLocal(){ localStorage.setItem('oki_mobile_settings_v1', JSON.stringify({groups, subs, rows: dataFromCards()})); alert('保存しました'); }
+function loadLocal(){ const raw = localStorage.getItem('oki_mobile_settings_v1'); if(!raw){ alert('保存データがありません'); return; } const obj = JSON.parse(raw); groups = obj.groups || groups; subs = obj.subs || subs; rebuildSettingsUI(); totalChecks = groups.length * subs.length; renderRows((obj.rows || []).map(r => ({...r, checks: normalizeChecks(r.checks)}))); }
+function exportHTML(){ const blob = new Blob([document.documentElement.outerHTML], {type:'text/html'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'Oki_Checklist.html'; a.click(); URL.revokeObjectURL(url); }
+function escapeHTML(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toggleSettings(){ document.getElementById('settingsPanel').classList.toggle('on'); }
+function rebuildSettingsUI(){
+  const gwrap = document.getElementById('groupSettings');
+  const swrap = document.getElementById('subSettings');
+  gwrap.innerHTML='';
+  groups.forEach((g,i)=>{
+    const row = document.createElement('div');
+    row.className = 'setting-row';
+    row.innerHTML = `<input type="text" value="${escapeHTML(g)}" data-g="${i}"><button class="smallbtn" onclick="moveUp('g', ${i})">↑</button><button class="smallbtn danger" onclick="removeSetting('g', ${i})">削除</button>`;
+    gwrap.appendChild(row);
+  });
+  const addg = document.createElement('div');
+  addg.className = 'setting-row';
+  addg.innerHTML = `<input type="text" id="newGroupName" placeholder="新しいカテゴリ名"><button class="smallbtn" onclick="addSetting('g')">追加</button><div></div>`;
+  gwrap.appendChild(addg);
+
+  swrap.innerHTML='';
+  subs.forEach((s,i)=>{
+    const row = document.createElement('div');
+    row.className = 'setting-row';
+    row.innerHTML = `<input type="text" value="${escapeHTML(s)}" data-s="${i}"><button class="smallbtn" onclick="moveUp('s', ${i})">↑</button><button class="smallbtn danger" onclick="removeSetting('s', ${i})">削除</button>`;
+    swrap.appendChild(row);
+  });
+  const adds = document.createElement('div');
+  adds.className = 'setting-row';
+  adds.innerHTML = `<input type="text" id="newSubName" placeholder="新しい小項目名"><button class="smallbtn" onclick="addSetting('s')">追加</button><div></div>`;
+  swrap.appendChild(adds);
+}
+function addSetting(type){
+  if(type==='g'){ const v = document.getElementById('newGroupName').value.trim(); if(v) groups.push(v); }
+  if(type==='s'){ const v = document.getElementById('newSubName').value.trim(); if(v) subs.push(v); }
+  rebuildSettingsUI();
+}
+function removeSetting(type, idx){ if(type==='g') groups.splice(idx,1); else subs.splice(idx,1); rebuildSettingsUI(); }
+function moveUp(type, idx){ const arr = type==='g' ? groups : subs; if(idx<=0) return; [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]]; rebuildSettingsUI(); }
+function normalizeChecks(checks){ const arr = Array(groups.length * subs.length).fill(false); (checks||[]).forEach((v,i)=>{ if(i<arr.length) arr[i]=!!v; }); return arr; }
+function applySettings(){
+  groups = [...document.querySelectorAll('#groupSettings input[type=text]')].map(i => i.value.trim()).filter(Boolean);
+  subs = [...document.querySelectorAll('#subSettings input[type=text]')].map(i => i.value.trim()).filter(Boolean);
+  totalChecks = groups.length * subs.length;
+  const data = dataFromCards().map(r => ({...r, checks: normalizeChecks(r.checks)}));
+  renderRows(data);
+  rebuildSettingsUI();
+}
+rebuildSettingsUI();
+renderRows([blankRow()]);
+</script>
+</body>
+</html>
